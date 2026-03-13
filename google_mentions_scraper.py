@@ -139,8 +139,7 @@ def create_driver():
     driver = Driver(
         uc=True, 
         headless=False,
-        agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        undo_stealth=False # Ensure stealth is active
+        agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     )
     # Additional CDP bypasses often help if uc=True isn't enough alone
     return driver
