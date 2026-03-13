@@ -4,7 +4,7 @@ import urllib.parse
 import time
 import random
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 from rapidfuzz import fuzz
 
@@ -53,37 +53,96 @@ def categorize_mention(text: str) -> str:
     else:
         return "No Target Mentioned"
 
-def parse_date(date_str):
-    if not date_str:
-        return None
-    date_str = str(date_str).strip().lower()
-    now = datetime.now()
-    if 'ago' in date_str:
+def extract_datetime_from_linkedin_url(url):
+    # LinkedIn post/activity/article IDs are 19 digits long and contain the timestamp
+    m = re.search(r'\b(\d{19})\b', str(url))
+    if m:
         try:
-            num = int(re.search(r'\d+', date_str).group())
-            if 'hour' in date_str or 'hr' in date_str or 'min' in date_str:
-                return now
-            elif 'day' in date_str:
-                return now - timedelta(days=num)
-            elif 'week' in date_str:
-                return now - timedelta(weeks=num)
-            elif 'month' in date_str:
-                return now - timedelta(days=num*30)
-            elif 'year' in date_str:
-                return now - timedelta(days=num*365)
-        except:
-            return None
-    elif 'yesterday' in date_str:
-        return now - timedelta(days=1)
-    else:
-        try:
-            return pd.to_datetime(date_str).to_pydatetime()
-        except:
+            activity_id = int(m.group(1))
+            # The first 41 bits of the 64-bit ID represent the Unix timestamp in milliseconds
+            timestamp_ms = activity_id >> 22
+            # Add UTC suffix or format appropriately later
+            return datetime.fromtimestamp(timestamp_ms / 1000.0, timezone.utc)
+        except Exception:
             pass
     return None
 
+def parse_date(date_str):
+    if not date_str:
+        return None
+    text_lower = str(date_str).strip().lower()
+    now = datetime.now()
+
+    # 1. Check for "Published Jan 1, 2026"
+    m = re.search(r'published\s+([a-z]{3}\s+\d{1,2},\s+\d{4})', text_lower)
+    if m:
+        try: return pd.to_datetime(m.group(1)).to_pydatetime()
+        except: pass
+
+    # 2. Check for "22 Sept 2025" or "Oct 12, 2024"
+    months = r'jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec'
+    m = re.search(rf'(\d{{1,2}}\s+(?:{months})\s+\d{{4}})', text_lower)
+    if m:
+        try: return pd.to_datetime(m.group(1)).to_pydatetime()
+        except: pass
+            
+    m = re.search(rf'((?:{months})\s+\d{{1,2}},\s+\d{{4}})', text_lower)
+    if m:
+        try: return pd.to_datetime(m.group(1)).to_pydatetime()
+        except: pass
+        
+    m = re.search(r'(\d{4}-\d{2}-\d{2})', text_lower)
+    if m:
+        try: return pd.to_datetime(m.group(1)).to_pydatetime()
+        except: pass
+
+    # 3. Standard "ago"
+    m = re.search(r'(\d+)\s+(days?|hours?|weeks?|months?|years?)\s+ago', text_lower)
+    if m:
+        try:
+            num = int(m.group(1))
+            unit = m.group(2)
+            if 'hour' in unit: return now
+            elif 'day' in unit: return now - timedelta(days=num)
+            elif 'week' in unit: return now - timedelta(weeks=num)
+            elif 'month' in unit: return now - timedelta(days=num*30)
+            elif 'year' in unit: return now - timedelta(days=num*365)
+        except: pass
+
+    # 4. LinkedIn style short dates: 2mo. / 3w · / 1d —
+    m = re.search(r'\b(\d+)(mo|w|d|h|m|yr)s?(?:\s*·|\s*\.|\s*—|\s|-)', text_lower)
+    if m:
+        try:
+            num = int(m.group(1))
+            unit = m.group(2)
+            if unit == 'h' or unit == 'm': return now
+            elif unit == 'd': return now - timedelta(days=num)
+            elif unit == 'w': return now - timedelta(weeks=num)
+            elif unit == 'mo': return now - timedelta(days=num*30)
+            elif unit == 'yr': return now - timedelta(days=num*365)
+        except: pass
+        
+    if 'yesterday' in text_lower:
+        return now - timedelta(days=1)
+        
+    # 5. Last resort normal parsing
+    try:
+        if len(text_lower) < 30: # Avoid parsing entire long snippets with to_datetime
+            return pd.to_datetime(text_lower).to_pydatetime()
+    except:
+        pass
+        
+    return None
+
 def create_driver():
-    driver = Driver(uc=True, headless=False)
+    # Use seleniumbase Driver with enhanced stealth settings
+    driver = Driver(
+        uc=True, 
+        headless=False,
+        agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        undo_stealth=False # Ensure stealth is active
+    )
+    # Additional CDP bypasses often help if uc=True isn't enough alone
     return driver
 
 def scrape_google_search(driver, search_query, max_pages=3, date_filter=None):
@@ -108,9 +167,14 @@ def scrape_google_search(driver, search_query, max_pages=3, date_filter=None):
             break
 
         # Scroll randomly to look human
-        for _ in range(3):
-            driver.execute_script(f"window.scrollBy(0, {random.randint(200, 700)});")
-            time.sleep(random.uniform(0.5, 1.5))
+        for _ in range(random.randint(2, 5)):
+            scroll_dist = random.randint(300, 800)
+            driver.execute_script(f"window.scrollBy(0, {scroll_dist});")
+            time.sleep(random.uniform(0.8, 2.0))
+            
+        # Occasional micro-pause to simulate reading
+        if random.random() > 0.7:
+            time.sleep(random.uniform(2, 4))
 
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         search_blocks = soup.select('div.g, div.tF2Cxc')
@@ -141,28 +205,27 @@ def scrape_google_search(driver, search_query, max_pages=3, date_filter=None):
                     if len(span.text) > 40:
                         snippet += span.text + " "
 
-            snippet = snippet.strip()
-            
-            if not date_text and snippet:
-                date_match = re.match(r'^((?:\w{3}\s\d{1,2},\s\d{4}|\d+\s+(?:days?|hours?|weeks?|months?|years?)\s+ago|yesterday))\s*(?:—|-|·|\|)\s*', snippet, re.IGNORECASE)
-                if date_match:
-                    date_text = date_match.group(1).strip()
-                    snippet = snippet[len(date_match.group(0)):].strip()
+            # Random micro-pause during processing
+            if random.random() > 0.8:
+                time.sleep(random.uniform(0.5, 1.5))
 
             text_to_evaluate = f"{title} {snippet}"
             category = categorize_mention(text_to_evaluate)
             
             if category != "No Target Mentioned":
-                parsed_date = parse_date(date_text)
+                parsed_date = extract_datetime_from_linkedin_url(link)
+                if not parsed_date:
+                    parsed_date = parse_date(date_text) or parse_date(snippet)
+                    
                 all_results.append({
                     'Mention_Type': category,
-                    'Date': parsed_date.strftime('%Y-%m-%d') if parsed_date else 'Unknown',
+                    'Date': parsed_date.strftime('%Y-%m-%d %H:%M:%S UTC') if parsed_date else 'Unknown',
                     'Title': title,
                     'Link': link,
                     'Snippet': snippet.strip()
                 })
                     
-        sleep_time = random.uniform(3, 6)
+        sleep_time = random.uniform(5, 10) # Increased delay between pages
         time.sleep(sleep_time)
         
     return all_results
@@ -173,12 +236,9 @@ def main():
     
     # 1. Search Joint Mentions
     q1 = 'site:linkedin.com/posts/ OR site:linkedin.com/pulse/ "Shayak Mazumder" "Adya AI"'
-    # 2. Search Adya AI only
-    q2 = 'site:linkedin.com/posts/ OR site:linkedin.com/pulse/ "Adya AI"'
-    # 3. Search Shayak only
-    q3 = 'site:linkedin.com/posts/ OR site:linkedin.com/pulse/ "Shayak Mazumder"'
     
-    queries = [(q1, 3), (q2, 3), (q3, 3)]
+    # 15 pages per query -> 150 results per string. This should realistically capture all posts within a 6-month period.
+    queries = [(q1, 15)]
     
     all_combined_results = []
     seen_links = set()
@@ -199,8 +259,12 @@ def main():
         df = pd.DataFrame(all_combined_results)
         
         # Sort so Joint Mentions are at the top, then Adya, then Shayak
-        df['sort_order'] = df['Mention_Type'].map({'Joint Mention': 0, 'Adya AI Only': 1, 'Shayak Mazumder Only': 2})
-        df = df.sort_values(by=['sort_order', 'Mention_Type']).drop('sort_order', axis=1)
+        # Sort by Mention_Type first, then by actual parsed datetime descending
+        df['sort_order'] = df['Mention_Type'].map({'Joint Mention': 0})
+        # We need an actual datetime column to sort by properly. We can temporarily parse the Date string (handling 'Unknown')
+        df['datetime_val'] = pd.to_datetime(df['Date'], errors='coerce')
+        df = df.sort_values(by=['sort_order', 'datetime_val'], ascending=[True, False])
+        df = df.drop(['sort_order', 'datetime_val'], axis=1)
         
         df.to_csv('google_mentions.csv', index=False)
 
@@ -216,7 +280,7 @@ def main():
         html_output += "<p>Below are all the scraped mentions successfully categorized by the entities they mention.</p>"
         
         # Segregate into separate tables
-        mention_types = ['Joint Mention', 'Adya AI Only', 'Shayak Mazumder Only']
+        mention_types = ['Joint Mention']
         
         for mtype in mention_types:
             subset = df[df['Mention_Type'] == mtype]

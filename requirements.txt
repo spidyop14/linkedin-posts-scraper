@@ -1,0 +1,7 @@
+pandas
+rapidfuzz
+selenium
+webdriver_manager
+seleniumbase
+beautifulsoup4
+requests
