@@ -233,10 +233,10 @@ def main():
     print("--- Starting Google Mentions Search (LinkedIn Last 6 Months) ---")
     driver = create_driver()
     
-    # 1. Search Joint Mentions
+    # Strict search for Joint Mentions only (Last 6 months)
     q1 = 'site:linkedin.com/posts/ OR site:linkedin.com/pulse/ "Shayak Mazumder" "Adya AI"'
     
-    # 15 pages per query -> 150 results per string. This should realistically capture all posts within a 6-month period.
+    # 15 pages per query -> 150 results.
     queries = [(q1, 15)]
     
     all_combined_results = []
