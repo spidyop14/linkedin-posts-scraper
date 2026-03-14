@@ -1,0 +1,50 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Environment folders
+.venv/
+venv/
+ENV/
+env/
+
+# SeleniumBase / Scraper specifics
+downloaded_files/
+logs/
+data/
+*.log
+
+# CSV/HTML results (Uncomment if you want to keep data out of Git)
+# google_mentions.csv
+# google_mentions.html
+# linkedin_posts.csv
+# linkedin_mentions.html
+
+# VS Code / IDE
+.vscode/
+.idea/
+.DS_Store
